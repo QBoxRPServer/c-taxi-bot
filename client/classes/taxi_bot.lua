@@ -4,7 +4,7 @@ TaxiBot.__index = TaxiBot
 function TaxiBot:new(model, driverModel)
     local obj = setmetatable({}, self)
     obj.model = model or "taxi"
-    obj.driverModel = driverModel or "a_m_y_business_01"
+    obj.driverModel = driverModel or "IG_RussianDrunk"
     obj.state = "idle" -- idle, spawning, driving, arrived, finished
     obj.attempts = 0
     obj.maxAttempts = 3
@@ -23,7 +23,7 @@ function TaxiBot:RequestTaxi(playerCoords)
     self.playerCoords = playerCoords
     self.attempts = 0
 
-    lib.notify({type = 'info', description = 'Вызываем такси...'})
+    lib.notify({type = 'info', description = 'Ищем машинку поблизости...', duration = 2500})
 
     self:FindSpawnPositionAndSpawn()
     return true
@@ -195,23 +195,23 @@ function TaxiBot:SpawnTaxi(spawnCoords)
 
     -- Настраиваем blip
     self:SetupBlip()
-
+    lib.notify({
+        type = 'success',
+        description = 'Такси c номером '..self.plate..' выехало к вам! Ожидайте прибытия',
+        duration = 5000
+    })
     -- Начинаем движение к игроку
     self.state = "driving"
     self:DriveToPlayer()
 
-    lib.notify({
-        type = 'success',
-        description = 'Такси выехало к вам! Ожидайте прибытия',
-        duration = 5000
-    })
+
 end
 
 function TaxiBot:CreateDriver()
     local driverHash = joaat(self.driverModel)
 
     if not lib.requestModel(driverHash, 3000) then
-        print("Ошибка загрузки модели водителя")
+        print("[DEBUG] Ошибка загрузки модели водителя")
         return
     end
 
@@ -261,65 +261,154 @@ function TaxiBot:DriveToPlayer()
         self:Cleanup()
         return
     end
-
+    local new_coords = getStoppingLocation(GetEntityCoords(PlayerPedId()))
     -- Настраиваем вождение
     TaskVehicleDriveToCoord(
             self.driver,
             self.vehicle,
-            self.playerCoords.x,
-            self.playerCoords.y,
-            self.playerCoords.z,
-            20.0, -- Скорость
+            new_coords.x,
+            new_coords.y,
+            new_coords.z,
+            10.0, -- Скорость
             0, -- Параметры вождения
             GetEntityModel(self.vehicle),
-            786603, -- Стиль вождения (аккуратный)
+            Config.DrivingStyles.rush.style,--786603, -- Стиль вождения (аккуратный)
             5.0, -- Дистанция остановки
             true -- Остановиться точно в точке
     )
 
     -- Запускаем мониторинг прибытия
-    self:MonitorArrival()
+    self:MonitorArrival(new_coords)
 end
 
-function TaxiBot:MonitorArrival()
-    while self.state == "driving" do
-        Citizen.Wait(1000)
+function TaxiBot:DriveTo(x,y,z)
+    if not self.driver or not DoesEntityExist(self.driver) then
+        self:Cleanup()
+        return
+    end
+    local speed = 20.0
+    local new_coords = getStoppingLocation(vec3(x,y,z))
+    --[[-- Настраиваем вождение
+    TaskVehicleDriveToCoord(
+            self.driver,
+            self.vehicle,
+            new_coords.x,
+            new_coords.y,
+            new_coords.z,
+            speed,
+            0, -- Параметры вождения
+            GetEntityModel(self.vehicle),
+            786603, -- Стиль вождения (аккуратный)
+            11.0, -- Дистанция остановки
+            false -- Остановиться точно в точке
+    )]]
 
-        if not self:IsValid() then
-            self:Cleanup()
-            return
-        end
+    -- Запускаем мониторинг прибытия
+    self:MonitorArrival(new_coords)
+end
 
-        local taxiCoords = GetEntityCoords(self.vehicle)
-        local distance = #(taxiCoords - self.playerCoords)
+function TaxiBot:MonitorArrival(coords)
+    if self.state == "driving" then
+        while self.state == "driving"  do
+            Citizen.Wait(1000)
 
-        -- Обновляем blip при приближении
-        if distance < 100 then
-            SetBlipScale(self.blip, 1.0)
-        end
-
-        -- Проверяем прибытие
-        if distance < 15.0 then
-            if GetIsTaskActive(self.driver, 169) or GetIsTaskActive(self.driver, 167) then
-                -- Водитель все еще едет, ждем
-            else
-                -- Прибыли!
-                self.state = "arrived"
-                self:OnArrival()
-                break
+            if not self:IsValid() then
+                self:Cleanup()
+                return
             end
-        end
 
-        -- Проверяем застревание
-        local speed = GetEntitySpeed(self.vehicle) * 3.6 -- км/ч
-        if speed < 5.0 then
-            self.stuckTimer = (self.stuckTimer or 0) + 1
-            if self.stuckTimer > 30 then -- Застрял на 30 секунд
-                self:HandleStuck()
+            local taxiCoords = GetEntityCoords(self.vehicle)
+
+            local distance = #(taxiCoords - coords)--self.playerCoords)
+            -- Обновляем blip при приближении
+            if distance < 100 then
+                SetBlipScale(self.blip, 1.0)
+            end
+
+            -- Проверяем прибытие
+            if distance < 15.0 then
+                if GetIsTaskActive(self.driver, 169) or GetIsTaskActive(self.driver, 167) then
+                    -- Водитель все еще едет, ждем
+                else
+                    -- Прибыли!
+                    if self.state == "driving" then
+                        self.state = "arrived"
+                    elseif self.state == "in_trip" then
+                        self.state = "trip_complete"
+                    end
+                    self:OnArrival()
+                    break
+                end
+            end
+
+            -- Проверяем застревание
+            local speed = GetEntitySpeed(self.vehicle) * 3.6 -- км/ч
+            if speed < 5.0 then
+                self.stuckTimer = (self.stuckTimer or 0) + 1
+                if self.stuckTimer > 30 then -- Застрял на 30 секунд
+                    self:HandleStuck()
+                    self.stuckTimer = 0
+                end
+            else
                 self.stuckTimer = 0
             end
-        else
-            self.stuckTimer = 0
+        end
+    else
+        local taxiCoords = GetEntityCoords(self.vehicle)
+        local flags = getVehNodeType(taxiCoords)
+        local speed = 20.0
+        while self.state == "in_trip"  do
+            Citizen.Wait(1000)
+
+            if not self:IsValid() then
+                self:Cleanup()
+                return
+            end
+
+            taxiCoords = GetEntityCoords(self.vehicle)
+            local newFlags = getVehNodeType(taxiCoords)
+
+            if newFlags ~= flags then
+                local limit = Config.SpeedLimitZones[newFlags] and Config.SpeedLimitZones[newFlags] or 20.0
+                speed = limit *Config.DrivingStyles.normal.speedMult
+                flags = newFlags
+            end
+            local distance = #(taxiCoords - coords)
+            if distance >= 100 then
+                TaskVehicleDriveToCoord(
+                        self.driver,
+                        self.vehicle,
+                        coords.x,
+                        coords.y,
+                        coords.z,
+                        speed,
+                        0, -- Параметры вождения
+                        GetEntityModel(self.vehicle),
+                        786603, -- Стиль вождения (аккуратный)
+                        11.0, -- Дистанция остановки
+                        false -- Остановиться точно в точке
+                )
+            elseif distance < 100 and distance > 16.0 then
+                TaskVehicleDriveToCoordLongrange(self.driver, self.vehicle, coords.x, coords.y, coords.z,
+                    10.0, Config.DrivingStyles.normal.style, 1.0)
+                SetPedKeepTask(self.driver, true)
+
+
+            -- Проверяем прибытие
+            elseif distance <= 16.0 then
+                if GetIsTaskActive(self.driver, 169) or GetIsTaskActive(self.driver, 167) then
+                    print("[DEBUG] Водитель все еще едет, ждем")
+                    -- Водитель все еще едет, ждем
+                    ClearPedTasks(self.driver)
+                else
+                    print("[DEBUG] Поездка завершена")
+                    if self.state == "in_trip" then
+                        self.state = "trip_complete"
+                    end
+                    self:OnArrival()
+                    break
+                end
+            end
         end
     end
 end
@@ -328,25 +417,35 @@ function TaxiBot:OnArrival()
     -- Останавливаемся
     TaskVehicleTempAction(self.driver, self.vehicle, 6, 5000) -- Остановка на 5 секунд
     SetVehicleEngineOn(self.vehicle, true, true, false)
+    if self.state == "arrived" then
+        lib.notify({
+            type = 'success',
+            description = 'Такси прибыло! Подойдите к машине',
+            duration = 7000
+        })
 
-    lib.notify({
-        type = 'success',
-        description = 'Такси прибыло! Подойдите к машине',
-        duration = 7000
-    })
+        -- Мигаем фарами
+        self:FlashLights()
 
-    -- Мигаем фарами
-    self:FlashLights()
-
-
-   --[[ print("vehiclekeys:client:SetOwner", self.plate)
-    print("Config.Framework.QBBox()", Config.Framework.QBBox())
-    if Config.Framework.QBBox() or Config.Framework.QBCore() then
-        print("vehiclekeys:client:SetOwner", self.plate)
-        TriggerEvent("vehiclekeys:client:SetOwner", self.plate)
-    end]]
-    -- Запускаем таймер ожидания
-    self:StartWaitingTimer()
+        -- Запускаем таймер ожидания
+        self:StartWaitingTimer()
+    elseif self.state == "trip_complete" then
+        PlayPedAmbientSpeechNative(self.driver, "TAXID_CLOSE_AS_POSS", "SPEECH_PARAMS_FORCE_NORMAL")
+        Wait(1500)
+        lib.notify({
+            type = 'success',
+            description = 'Поездка завершена',
+            duration = 7000
+        })
+        TaskLeaveVehicle(PlayerPedId(), self.vehicle, 1)
+        Wait(1500)
+        StartVehicleHorn(self.vehicle, 1500, 0, true)
+        ClearPedTasks(self.driver)
+        SetEntityAsNoLongerNeeded(self.driver)
+        SetEntityAsNoLongerNeeded(self.vehicle)
+        Wait(15000)
+        self:Cleanup()
+    end
 
 end
 
@@ -361,7 +460,7 @@ function TaxiBot:FlashLights()
 end
 
 function TaxiBot:SeatToVehicle()
-    if (AreAnyVehicleSeatsFree(self.vehicle)) then
+    --[[if (AreAnyVehicleSeatsFree(self.vehicle)) then
         for i = -1, GetVehicleModelNumberOfSeats(self.vehicle) do
             if (IsVehicleSeatFree(self.vehicle, i)) then
                 SetVehicleDoorsLocked(self.vehicle, 1)
@@ -371,8 +470,18 @@ function TaxiBot:SeatToVehicle()
         end
     else
         return false
+    end]]
+    if (AreAnyVehicleSeatsFree(self.vehicle)) then
+        for i = 2, 1, -1 do
+            if IsVehicleSeatFree(self.vehicle, i) then
+                SetVehicleDoorsLocked(self.vehicle, 1)
+                TaskEnterVehicle(PlayerPedId(), self.vehicle, 5000, i, 1.0, 1, 0)
+                return true
+            end
+        end
+    else
+        return false
     end
-
 end
 
 function TaxiBot:StartWaitingTimer()
@@ -414,15 +523,29 @@ function TaxiBot:StartWaitingTimer()
     end
 end
 
+
+
+
+
 function TaxiBot:StartTrip()
     self.state = "in_trip"
+    PlayPedAmbientSpeechNative(self.driver,
+            "TAXID_WHERE_TO", "SPEECH_PARAMS_FORCE_NORMAL")
     lib.notify({
-        type = 'success',
-        description = 'Поездка началась! Скажите водителю куда ехать',
+        type = 'inform',
+        description = 'Что бы начать поездку, скажите водителю куда ехать',
         duration = 5000
     })
-
-    -- Здесь можно добавить логику поездки к месту назначения
+    local tx, ty, tz = GetWaypoint()
+    if tx and ty and tz then
+        self.state = "in_trip"
+        lib.notify({
+            type = 'success',
+            description = 'Поездка началась! Для принудительной отмены нажмите Backspace',
+            duration = 5000
+        })
+        self:DriveTo(tx, ty, tz)
+    end
 end
 
 function TaxiBot:HandleStuck()
