@@ -4,11 +4,12 @@ TaxiBot.__index = TaxiBot
 function TaxiBot:new(model, driverModel)
     local obj = setmetatable({}, self)
     obj.model = model or "taxi"
-    obj.driverModel = driverModel or "IG_RussianDrunk"
+    obj.driverModel = driverModel or "a_m_m_eastsa_02"
     obj.state = "idle" -- idle, spawning, driving, arrived, finished
     obj.attempts = 0
     obj.maxAttempts = 3
     obj.plate = nil
+    obj.price = 0
 
     return obj
 end
@@ -20,7 +21,7 @@ function TaxiBot:RequestTaxi(playerCoords)
     end
 
     self.state = "spawning"
-    self.playerCoords = playerCoords
+    self.playerCoords = playerCoords and playerCoords or GetEntityCoords(PlayerPedId())
     self.attempts = 0
 
     lib.notify({type = 'info', description = 'Ищем машинку поблизости...', duration = 2500})
@@ -234,11 +235,13 @@ function TaxiBot:CreateDriver()
         SetDriverAbility(driver, 1.0) -- Максимальное умение вождения
         SetDriverAggressiveness(driver, 0.1) -- Минимальная агрессивность
 
-        -- Одеваем как таксиста
+       --[[ -- Одеваем как таксиста
         SetPedComponentVariation(driver, 3, 0, 0, 0) -- Руки
         SetPedComponentVariation(driver, 4, 21, 0, 0) -- Брюки
         SetPedComponentVariation(driver, 8, 59, 0, 0) -- Рубашка
-        SetPedComponentVariation(driver, 11, 55, 0, 0) -- Куртка
+        SetPedComponentVariation(driv
+        er, 11, 55, 0, 0) -- Куртка]]
+        SetAmbientVoiceName(driver, 'A_M_M_RUSSIAN_01')
     end
 end
 
@@ -289,23 +292,40 @@ function TaxiBot:DriveTo(x,y,z)
     end
     local speed = 20.0
     local new_coords = getStoppingLocation(vec3(x,y,z))
-    --[[-- Настраиваем вождение
-    TaskVehicleDriveToCoord(
-            self.driver,
-            self.vehicle,
-            new_coords.x,
-            new_coords.y,
-            new_coords.z,
-            speed,
-            0, -- Параметры вождения
-            GetEntityModel(self.vehicle),
-            786603, -- Стиль вождения (аккуратный)
-            11.0, -- Дистанция остановки
-            false -- Остановиться точно в точке
-    )]]
+    SetVehicleDoorsLocked(self.vehicle, 4)
 
+    -- Запускаем мониторинг отмены
+    self:MonitorTrip()
     -- Запускаем мониторинг прибытия
     self:MonitorArrival(new_coords)
+end
+
+function TaxiBot:MonitorTrip()
+    self.price = Config.price_per_landing
+    local timer = 0
+    Citizen.CreateThread(function()
+        while self.state=="in_trip" do
+            --Нажатие Backspace
+            if IsControlJustReleased(0, 177) then
+                self:Cancel()
+            end
+
+            if timer < 1000 then
+                timer = timer +1
+            else
+                timer = 0
+                self.price = self.price + Config.price_per_second
+            end
+            DrawText2D(string.format("Стоимость поездки: $%s", self.price),
+                        {0.5, 0.95}, -- Центр нижней части экрана
+                        0.6,
+                        {255,165,0,255},
+                        4);
+            Wait(0)
+        end
+        TerminateThisThread()
+    end)
+
 end
 
 function TaxiBot:MonitorArrival(coords)
@@ -360,11 +380,11 @@ function TaxiBot:MonitorArrival(coords)
         local speed = 20.0
         while self.state == "in_trip"  do
             Citizen.Wait(1000)
-
             if not self:IsValid() then
                 self:Cleanup()
                 return
             end
+
 
             taxiCoords = GetEntityCoords(self.vehicle)
             local newFlags = getVehNodeType(taxiCoords)
@@ -375,6 +395,7 @@ function TaxiBot:MonitorArrival(coords)
                 flags = newFlags
             end
             local distance = #(taxiCoords - coords)
+            print("distance", distance)
             if distance >= 100 then
                --[[ TaskVehicleDriveToCoord(
                         self.driver,
@@ -428,13 +449,15 @@ function TaxiBot:OnArrival()
             duration = 7000
         })
 
-        -- Мигаем фарами
-        self:FlashLights()
+        StartVehicleHorn(self.vehicle, 500, 0, true)
+        --[[-- Мигаем фарами
+        self:FlashLights()]]
 
         -- Запускаем таймер ожидания
         self:StartWaitingTimer()
     elseif self.state == "trip_complete" then
-        PlayPedAmbientSpeechNative(self.driver, "TAXID_CLOSE_AS_POSS", "SPEECH_PARAMS_FORCE_NORMAL")
+        SetVehicleDoorsLocked(self.vehicle, 1)
+        playTaxiSpeech(self.driver, "TAXID_ARRIVE_AT_DEST", "SPEECH_PARAMS_FORCE_NORMAL")
         Wait(1500)
         lib.notify({
             type = 'success',
@@ -443,6 +466,7 @@ function TaxiBot:OnArrival()
         })
         TaskLeaveVehicle(PlayerPedId(), self.vehicle, 1)
         Wait(1500)
+        self:Pay()
         StartVehicleHorn(self.vehicle, 1500, 0, true)
         ClearPedTasks(self.driver)
         SetEntityAsNoLongerNeeded(self.driver)
@@ -518,6 +542,7 @@ function TaxiBot:StartWaitingTimer()
 
         local remaining = waitTime - math.floor((GetGameTimer() - startTime) / 1000)
         if remaining % 30 == 0 then
+            StartVehicleHorn(self.vehicle, 1000, 0, true)
             lib.notify({
                 type = 'info',
                 description = 'Такси ждет вас! Осталось: ' .. remaining .. ' сек',
@@ -527,14 +552,21 @@ function TaxiBot:StartWaitingTimer()
     end
 end
 
-
+function TaxiBot:Pay()
+    print("Нужно заплатить", self.price)
+    lib.callback("c-taxi:server:payForTaxi", false, function(data)
+        if not data then
+            --todo как то получить бабки
+        end
+    end, self.price)
+end
 
 
 
 function TaxiBot:StartTrip()
     self.state = "in_trip"
-    PlayPedAmbientSpeechNative(self.driver,
-            "TAXID_WHERE_TO", "SPEECH_PARAMS_FORCE_NORMAL")
+
+    playTaxiSpeech(self.driver, "TAXID_BEGIN_JOURNEY", "SPEECH_PARAMS_FORCE_NORMAL")
     lib.notify({
         type = 'inform',
         description = 'Что бы начать поездку, скажите водителю куда ехать',
@@ -581,16 +613,18 @@ function TaxiBot:Cleanup()
     if self.blip then
         RemoveBlip(self.blip)
     end
-
+    SetVehicleDoorsLocked(self.vehicle, 1)
     self.state = "idle"
     self.vehicle = nil
     self.driver = nil
     self.blip = nil
+    self.price = 0
 end
 
 function TaxiBot:Cancel()
     if self.state ~= "idle" then
         lib.notify({type = 'info', description = 'Вызов такси отменен'})
+        self:Pay()
         self:Cleanup()
     end
 end

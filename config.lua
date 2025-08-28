@@ -1,5 +1,7 @@
 Config = {}
 Config = {
+    price_per_landing = 25, --price per landing
+    price_per_second = 1, --price per landing
     vehicle_model = "taxi"
 }
 Config.SpeedLimitZones = { -- Speeds in MPH
