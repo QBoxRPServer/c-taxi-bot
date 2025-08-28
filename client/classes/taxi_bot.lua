@@ -189,6 +189,7 @@ function TaxiBot:SpawnTaxi(spawnCoords)
     SetVehicleColours(vehicle, 88, 88) -- Желтый цвет для такси
     self.plate = "TAXI " .. math.random(100, 999)
     SetVehicleNumberPlateText(vehicle, self.plate)
+    SetVehicleRadioEnabled(vehicle, false)
 
     -- Создаем водителя
     self:CreateDriver()
