@@ -395,7 +395,7 @@ function TaxiBot:MonitorArrival(coords)
                 flags = newFlags
             end
             local distance = #(taxiCoords - coords)
-            print("distance", distance)
+
             if distance >= 100 then
                --[[ TaskVehicleDriveToCoord(
                         self.driver,
@@ -553,7 +553,7 @@ function TaxiBot:StartWaitingTimer()
 end
 
 function TaxiBot:Pay()
-    print("Нужно заплатить", self.price)
+
     lib.callback("c-taxi:server:payForTaxi", false, function(data)
         if not data then
             --todo как то получить бабки
