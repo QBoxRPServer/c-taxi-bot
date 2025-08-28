@@ -376,7 +376,7 @@ function TaxiBot:MonitorArrival(coords)
             end
             local distance = #(taxiCoords - coords)
             if distance >= 100 then
-                TaskVehicleDriveToCoord(
+               --[[ TaskVehicleDriveToCoord(
                         self.driver,
                         self.vehicle,
                         coords.x,
@@ -385,10 +385,13 @@ function TaxiBot:MonitorArrival(coords)
                         speed,
                         0, -- Параметры вождения
                         GetEntityModel(self.vehicle),
-                        786603, -- Стиль вождения (аккуратный)
+                        Config.DrivingStyles.normal, -- Стиль вождения (аккуратный)
                         11.0, -- Дистанция остановки
                         false -- Остановиться точно в точке
-                )
+                )]]
+                TaskVehicleDriveToCoordLongrange(self.driver, self.vehicle, coords.x, coords.y, coords.z,
+                       speed, Config.DrivingStyles.normal.style, 1.0)
+                SetPedKeepTask(self.driver, true)
             elseif distance < 100 and distance > 16.0 then
                 TaskVehicleDriveToCoordLongrange(self.driver, self.vehicle, coords.x, coords.y, coords.z,
                     10.0, Config.DrivingStyles.normal.style, 1.0)

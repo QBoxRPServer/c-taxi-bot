@@ -11,7 +11,7 @@ Config.SpeedLimitZones = { -- Speeds in MPH
 }
 Config.DrivingStyles = { -- See https://vespura.com/fivem/drivingstyle/
     normal = {
-            style = 786603,--524731,
+            style = 786607,--786603,--524731,
             speedMult = 1.0,
             aggressiveness = 0.5,
     },
