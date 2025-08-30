@@ -11,7 +11,6 @@ function GetWaypoint()
         waypoint = GetFirstBlipInfoId(8)
         Citizen.Wait(500)
     end
-    print("GetWaypoint +++")
     return table.unpack(Citizen.InvokeNative(0xFA7C7F0AADF25D09, waypoint, Citizen.ResultAsVector()))
 
 end
@@ -32,8 +31,6 @@ function playTaxiSpeech(driver, speechName, speechParams)
     if GetPedAlertness(driver) < 1.0 then
         SetPedAlertness(driver, 1.0)
     end
-    print("должен сказать", speechName, speechParams)
-    --PlayPedAmbientSpeechAndCloneNative(driver, speechName, speechParams)
     PlayPedAmbientSpeechNative(driver, "GENERIC_INSULT_HIGH"--[[speechName]], "SPEECH_PARAMS_FORCE"--[[speechParam]])
     return true
 end

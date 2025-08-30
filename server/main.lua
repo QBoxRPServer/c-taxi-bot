@@ -26,7 +26,7 @@ lib.callback.register('c-taxi:server:payForTaxi', function(source, price)
                 return(false)
             end
         else
-            exports['c-logger']:ServerLog("CRITICAL", "Ошибка получения PlayerData", GetCurrentResourceName())
+            print("CRITICAL", "Ошибка получения PlayerData")
         end
     end
 end)

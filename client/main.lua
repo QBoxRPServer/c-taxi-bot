@@ -4,13 +4,6 @@
 local TaxiBot = require 'client.classes.taxi_bot'  -- Импортируем класс
 local taxi_bot = nil
 
-
-
-
-
-
-
-
 -----------------------
 ----   Functions   ----
 -----------------------
@@ -34,7 +27,6 @@ RegisterNetEvent('c-taxi-bot:client:callVehicle', function()
               end
        end
 
-      --exports['c-logger']:Log("WARNING", "Ошибка при обращении к getMissionData",GetCurrentResourceName())
 end)
 
 AddEventHandler("onResourceStop", function(resName)
